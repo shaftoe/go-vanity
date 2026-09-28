@@ -1,0 +1,9 @@
+[build]
+  publish = "public"
+
+# Everything on the domain goes to the vanity function.
+[[redirects]]
+  from = "/*"
+  to = "/.netlify/functions/vanity/:splat"
+  status = 200
+  force = true
