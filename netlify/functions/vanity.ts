@@ -1,12 +1,30 @@
 // Vanity Go import server as a Netlify function.
 //
 // Env vars:
-//   VANITY_TARGET  required, e.g. "github.com/shaftoe"
+//   VANITY_TARGET  fallback repo host + owner, e.g. "github.com/shaftoe"
+//   VANITY_REPOS   optional explicit mappings "path=host/org/repo,..." that
+//                  override the VANITY_TARGET fallback per repo
 //   VANITY_BRANCH  optional, default "master" (only used for go-source links)
 //
 // LOG_LEVEL / logging: Netlify captures console output automatically.
 
 const contentTypePlain = "text/plain; charset=utf-8";
+
+// Parse VANITY_REPOS: comma-separated "path=host/org/repo" tuples.
+// Malformed entries are skipped with a warning.
+const parseRepos = (raw: string | undefined): Record<string, string> => {
+  const repos: Record<string, string> = {};
+  for (const tuple of raw?.split(",") ?? []) {
+    if (!tuple) continue;
+    const eq = tuple.indexOf("=");
+    if (eq <= 0 || eq === tuple.length - 1) {
+      console.warn(JSON.stringify({ msg: "ignoring malformed VANITY_REPOS entry", entry: tuple }));
+      continue;
+    }
+    repos[tuple.slice(0, eq).trim()] = tuple.slice(eq + 1).trim();
+  }
+  return repos;
+};
 
 const plain = (status: number, body: string): Response =>
   new Response(body, { status, headers: { "content-type": contentTypePlain } });
@@ -17,13 +35,14 @@ const debug = (obj: Record<string, unknown>): void => {
 
 export default async (req: Request): Promise<Response> => {
   const target = process.env.VANITY_TARGET;
+  const repos = parseRepos(process.env.VANITY_REPOS);
   const branch = process.env.VANITY_BRANCH ?? "master";
 
   if (req.method !== "GET" && req.method !== "HEAD") {
     debug({ msg: "method not allowed", method: req.method });
     return plain(405, "method not allowed\n");
   }
-  if (!target) {
+  if (!target && Object.keys(repos).length === 0) {
     console.error(JSON.stringify({ msg: "VANITY_TARGET not set" }));
     return plain(500, "VANITY_TARGET not set\n");
   }
@@ -45,7 +64,11 @@ export default async (req: Request): Promise<Response> => {
   }
 
   const module = `${host}/${repo}`;
-  const vcsUrl = `${target}/${repo}`;
+  const vcsUrl = repos[repo] ?? (target ? `${target}/${repo}` : null);
+  if (!vcsUrl) {
+    debug({ msg: "repo not mapped and no VANITY_TARGET", repo });
+    return plain(404, "not found\n");
+  }
   const body = `<!DOCTYPE html>
 <html>
 <head>

@@ -14,9 +14,21 @@ decoupled from your git host.
 
    | Var | Required | Description |
    |---|---|---|
-   | `VANITY_TARGET` | yes | Repo host + owner, e.g. `github.com/shaftoe` |
+   | `VANITY_TARGET` | see below | Fallback repo host + owner, e.g. `github.com/shaftoe` |
+   | `VANITY_REPOS` | see below | Explicit mappings `path=host/org/repo`, comma-separated |
    | `VANITY_BRANCH` | no | Branch used in `go-source` links (default `master`) |
    | `DEBUG` | no | `true` to enable debug logs |
+
+   At least one of `VANITY_TARGET` or `VANITY_REPOS` must be set.
+   `VANITY_REPOS` lets a single domain serve repos from multiple owners, e.g.:
+
+   ```
+   VANITY_REPOS=runvoy=github.com/runvoy/runvoy,savetoink=github.com/savetoink/savetoink
+   ```
+
+   A request path found in `VANITY_REPOS` resolves to that full repo slug;
+   anything else falls back to `$VANITY_TARGET/$repo` (or 404s if no fallback
+   is configured). Malformed entries are skipped with a warning.
 
 3. Deploy. `netlify.toml` routes `/*` to the function; the module prefix in
    the meta tags is taken from the request URL's host.
@@ -27,7 +39,9 @@ decoupled from your git host.
 go get go.example.com/myrepo
 ```
 
-Repo names map 1:1: `go.example.com/myrepo` → `$VANITY_TARGET/myrepo`.
+Repo names map 1:1: `go.example.com/myrepo` → `$VANITY_TARGET/myrepo` (unless
+overridden by `VANITY_REPOS`, e.g. `go.example.com/runvoy` →
+`github.com/runvoy/runvoy`).
 Deeper paths (`go.example.com/myrepo/sub/pkg`) resolve to `myrepo`.
 
 ## Development

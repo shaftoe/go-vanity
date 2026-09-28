@@ -46,6 +46,55 @@ describe("vanity handler", () => {
     });
   });
 
+  it("resolves explicit VANITY_REPOS mappings", async () => {
+    await withEnv(
+      {
+        VANITY_TARGET: "github.com/shaftoe",
+        VANITY_REPOS: "runvoy=github.com/runvoy/runvoy,savetoink=github.com/savetoink/savetoink",
+      },
+      async () => {
+        const res = await handler(new Request("https://go.example.com/savetoink?go-get=1"));
+        expect(res.status).toBe(200);
+        const body = await res.text();
+        expect(body).toContain(
+          'go-import" content="go.example.com/savetoink git https://github.com/savetoink/savetoink"',
+        );
+        expect(body).toContain("https://github.com/savetoink/savetoink/tree/master{/dir}");
+      },
+    );
+  });
+
+  it("falls back to VANITY_TARGET for unmapped repos", async () => {
+    await withEnv(
+      { VANITY_TARGET: "github.com/shaftoe", VANITY_REPOS: "runvoy=github.com/runvoy/runvoy" },
+      async () => {
+        const res = await handler(new Request("https://go.example.com/boneclone?go-get=1"));
+        expect(await res.text()).toContain(
+          'git https://github.com/shaftoe/boneclone"',
+        );
+      },
+    );
+  });
+
+  it("works with only VANITY_REPOS and 404s unmapped repos", async () => {
+    await withEnv({ VANITY_REPOS: "runvoy=github.com/runvoy/runvoy" }, async () => {
+      const ok = await handler(new Request("https://go.example.com/runvoy?go-get=1"));
+      expect(ok.status).toBe(200);
+      expect(await ok.text()).toContain("https://github.com/runvoy/runvoy");
+
+      const miss = await handler(new Request("https://go.example.com/other?go-get=1"));
+      expect(miss.status).toBe(404);
+    });
+  });
+
+  it("ignores malformed VANITY_REPOS entries", async () => {
+    await withEnv({ VANITY_REPOS: "broken,:bogus,ok=github.com/o/ok" }, async () => {
+      const res = await handler(new Request("https://go.example.com/ok?go-get=1"));
+      expect(res.status).toBe(200);
+      expect(await res.text()).toContain("https://github.com/o/ok");
+    });
+  });
+
   it("404s human traffic", async () => {
     await withEnv({ VANITY_TARGET: "github.com/shaftoe" }, async () => {
       const res = await handler(new Request("https://go.shaftoe.dev/boneclone"));
